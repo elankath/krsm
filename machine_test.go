@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 func TestSimpleCatMachine(t *testing.T) {
@@ -15,10 +16,12 @@ func TestSimpleCatMachine(t *testing.T) {
 		Scratching CatState = "Scratching"
 		Biting     CatState = "Biting"
 
+		allStates = []CatState{Sleeping, Purring, Scratching, Biting}
+
 		Pet CatEvent = "PET"
 		Hit CatEvent = "HIT"
 	)
-	builder := NewBuilder[CatState, CatEvent](Sleeping)
+	builder := NewBuilder[CatState, CatEvent]("CatMachine")
 	builder.ConfigureState(Sleeping).
 		Permit(Pet, Purring).
 		Permit(Hit, Scratching).
@@ -32,12 +35,21 @@ func TestSimpleCatMachine(t *testing.T) {
 		Permit(Pet, Scratching).
 		Permit(Hit, Biting)
 
-	var catMachine StateMachine[CatState, CatEvent] = builder.Build()
+	var catMachine = builder.Build()
+	diagPath, err := GenerateDiagram(catMachine, "/tmp")
+	if err != nil {
+		t.Errorf("(TestSimpleCatMachine) error generating diagram: %s", err)
+	} else {
+		t.Logf("(TestSimpleCatMachine) generated diagram at: %s", diagPath)
+	}
 
 	g := NewWithT(t)
-	g.Expect(catMachine.CurrentState()).To(BeEquivalentTo("SLEEPING"))
+	g.Expect(catMachine.StatesSet()).To(BeEquivalentTo(sets.New(allStates...)))
 
-	transition, err := catMachine.Trigger("pet", "So Fluffy!")
+	g.Expect(catMachine.currentState).To(BeEquivalentTo(Sleeping))
+	transition, err := catMachine.Trigger(Pet, "So Fluffy!")
 	g.Expect(err).To(BeNil())
-	g.Expect(transition.TargetState).To(BeEquivalentTo("PURRING"))
+	g.Expect(transition.TargetState).To(BeEquivalentTo(Purring))
+	g.Expect(transition.SourceState).To(BeEquivalentTo(Sleeping))
+
 }

@@ -4,41 +4,52 @@ import (
 	"fmt"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 type DefaultStateMachine[S State, E Event] struct {
-	currState  S
-	stateEdges map[S][]edge[S, E]
+	name         string
+	states       []S                // TODO: Change to [][]S when sub-states are introduced
+	edges        map[S][]edge[S, E] // adjacency map representation
+	currentState S
+}
+
+func (m *DefaultStateMachine[S, E]) Name() string {
+	return m.name
 }
 
 func (m *DefaultStateMachine[S, E]) CurrentState() S {
-	return m.currState
+	return m.currentState
 }
 
-func (m *DefaultStateMachine[S, E]) Trigger(event E, message string) (transition Transition[S, E], err error) { //TODO: define custom error with error code
-	// TODO, FIXME: Take Mutex
-	edges := m.stateEdges[m.currState]
-	//if !ok {
-	//	return m.EmptyTransition, fmt.Errorf("%w: current state: %s has no edges ", ErrIllegalState, m.currState)
-	//}
-	for _, e := range edges {
-		if e.SourceState != m.currState {
-			err = fmt.Errorf("%w: current state: %s does not match source stage of edge: %v", ErrIllegalState, m.currState, e)
+func (m *DefaultStateMachine[S, E]) States() []S {
+	return m.states
+}
+
+func (m *DefaultStateMachine[S, E]) StatesSet() sets.Set[S] {
+	return sets.New(m.states...)
+}
+
+func (m *DefaultStateMachine[S, E]) Trigger(triggerEvent E, message string) (transition Transition[S, E], err error) { //TODO: define custom error with error code
+	//// TODO, FIXME: Take Mutex and then call Trigger mutex
+	stateEdges := m.edges[m.currentState]
+	for _, e := range stateEdges {
+		if e.sourceState != m.currentState {
+			err = fmt.Errorf("%w: current state %q does not match source stage of e %v", ErrIllegalState, m.currentState, e)
 			return
 		}
-		if e.Event == event {
-			targetState := e.TargetState
+		if e.event == triggerEvent {
 			transition = Transition[S, E]{
 				CreatedTime: metav1.Now(),
-				SourceState: e.SourceState,
-				Event:       event,
-				TargetState: e.TargetState,
+				SourceState: m.currentState,
+				Event:       triggerEvent,
+				TargetState: e.targetState,
 				Message:     message,
 			}
-			m.currState = targetState
+			m.currentState = transition.TargetState
 			return
 		}
 	}
-	err = fmt.Errorf("no transition for Event: %s from SourceState: %s", event, m.currState)
+	err = fmt.Errorf("no transition for Event: %s from SourceState: %s", triggerEvent, m.currentState)
 	return
 }

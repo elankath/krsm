@@ -2,6 +2,7 @@ package krsm
 
 import (
 	"errors"
+	"fmt"
 
 	"golang.org/x/exp/constraints"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -41,13 +42,18 @@ type Guard[S State] struct {
 }
 
 type StateMachine[S State, E Event] interface {
+	Name() string
 	CurrentState() S
 	Trigger(event E, message string) (transition Transition[S, E], err error)
 }
 
 type edge[S State, E Event] struct {
-	SourceState S
-	Event       E
-	TargetState S
+	event       E
+	sourceState S
+	targetState S
 	// TODO: Add Guard
+}
+
+func (e *edge[S, E]) String() string {
+	return fmt.Sprintf("(%s-%s-%s)", e.sourceState, e.event, e.targetState)
 }
