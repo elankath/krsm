@@ -3,6 +3,7 @@ module github.com/elankath/krsm
 go 1.21
 
 require (
+	github.com/onsi/gomega v1.27.10
 	golang.org/x/exp v0.0.0-20230817173708-d852ddb80c63
 	k8s.io/apimachinery v0.28.1
 )
@@ -15,7 +16,6 @@ require (
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
-	github.com/onsi/gomega v1.27.10 // indirect
 	golang.org/x/net v0.13.0 // indirect
 	golang.org/x/text v0.11.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
