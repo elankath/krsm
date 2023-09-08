@@ -8,9 +8,12 @@ import (
 )
 
 type DefaultStateMachine[S State, E Event] struct {
-	name         string
-	states       []S                // TODO: Change to [][]S when sub-states are introduced
-	edges        map[S][]edge[S, E] // adjacency map representation
+	name   string
+	states []S                // TODO: Change to [][]S when sub-states are introduced
+	edges  map[S][]edge[S, E] // adjacency map representation
+	// ALTERNATIVELY: use adjacency matrix ie [][]struct{} or [][]int and a []S stateIndices and []Edge[S, E] edgeIndices
+	// If there is an edge from vertex i to j, mark adjMat[i][j] as 1.
+	// If there is no edge from vertex i to j, mark adjMat[i][j] as 0.
 	currentState S
 }
 

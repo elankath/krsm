@@ -36,13 +36,6 @@ func TestSimpleCatMachine(t *testing.T) {
 		Permit(Hit, Biting)
 
 	var catMachine = builder.Build()
-	diagPath, err := GenerateDiagram(catMachine, "/tmp")
-	if err != nil {
-		t.Errorf("(TestSimpleCatMachine) error generating diagram: %s", err)
-	} else {
-		t.Logf("(TestSimpleCatMachine) generated diagram at: %s", diagPath)
-	}
-
 	g := NewWithT(t)
 	g.Expect(catMachine.StatesSet()).To(BeEquivalentTo(sets.New(allStates...)))
 
