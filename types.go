@@ -6,6 +6,7 @@ import (
 
 	"golang.org/x/exp/constraints"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 var (
@@ -15,6 +16,15 @@ var (
 
 	// ErrIllegalState is a sentinel error indicating that the state machine is in an illegal state.
 	ErrIllegalState = errors.New("illegal state")
+
+	// ErrDuplicateEdge is a sentinel error indicating that a duplicate edge has been defined by the consumer.
+	ErrDuplicateEdge = errors.New("duplicate edge")
+
+	// ErrCouldNotTransition is a sentinel error indicating that one could not transition from the current state
+	ErrCouldNotTransition = errors.New("could not transition from current state")
+
+	// ErrCannotHaveDiffParents is a sentinel error indicating that a state cannot have different parents
+	ErrCannotHaveDiffParents = errors.New("state cannot have diff parent")
 )
 
 type State interface {
@@ -45,6 +55,7 @@ type StateMachine[S State, E Event] interface {
 	Name() string
 	CurrentState() S
 	Trigger(event E, message string) (transition Transition[S, E], err error)
+	States() sets.Set[S]
 }
 
 type edge[S State, E Event] struct {

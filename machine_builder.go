@@ -1,6 +1,8 @@
 package krsm
 
 import (
+	"errors"
+	"fmt"
 	"slices"
 )
 
@@ -9,6 +11,8 @@ type Builder[S State, E Event] struct {
 	states             []S
 	edges              map[S][]edge[S, E]
 	stateConfigurators map[S]*StateConfigurator[S, E]
+	errors             []error
+	parentStates       map[S]S
 }
 
 type StateConfigurator[S State, E Event] struct {
@@ -38,8 +42,25 @@ func (b *Builder[S, E]) ConfigureState(state S) *StateConfigurator[S, E] {
 	return stateConfigurator
 }
 
+func (b *Builder[S, E]) ConfigureSubState(subState S, parentState S) *StateConfigurator[S, E] {
+	subStateConfigurator := b.ConfigureState(subState)
+	parentStates := b.parentStates
+	if currParent, ok := parentStates[subState]; ok {
+		if currParent != parentState {
+			b.addError(ErrCannotHaveDiffParents, "cannot have parent %q as existing parent %q is already defined: %w", parentState, currParent)
+		}
+		return subStateConfigurator
+	}
+	b.parentStates[subState] = parentState
+	return subStateConfigurator
+}
+
 func (c *StateConfigurator[S, E]) ConfigureState(state S) *StateConfigurator[S, E] {
 	return c.builder.ConfigureState(state)
+}
+
+func (c *StateConfigurator[S, E]) ConfigureSubState(subState S, parentState S) *StateConfigurator[S, E] {
+	return c.builder.ConfigureSubState(subState, parentState)
 }
 
 func (c *StateConfigurator[S, E]) Permit(event E, targetState S) *StateConfigurator[S, E] {
@@ -49,8 +70,9 @@ func (c *StateConfigurator[S, E]) Permit(event E, targetState S) *StateConfigura
 		targetState: targetState,
 	}
 	stateEdges := c.builder.edges[c.state]
-	if slices.Contains(stateEdges, edge) { // design defect in code
-		panic("already defined edge: " + edge.String())
+	if slices.Contains(stateEdges, edge) {
+		c.builder.addError(ErrDuplicateEdge, "edge %q already defined: %w", edge)
+		return c
 	}
 	stateEdges = append(stateEdges, edge)
 	c.builder.edges[c.state] = stateEdges
@@ -59,12 +81,19 @@ func (c *StateConfigurator[S, E]) Permit(event E, targetState S) *StateConfigura
 
 // Build builds the Default State Machine. Internally ensures that indices are set on the edges for optimized
 // adjacency list traversal
-func (b *Builder[S, E]) Build() *DefaultStateMachine[S, E] {
-	sm := DefaultStateMachine[S, E]{
+func (b *Builder[S, E]) Build() (StateMachine[S, E], error) {
+	if len(b.errors) != 0 {
+		return nil, errors.Join(b.errors...)
+	}
+	sm := defaultStateMachine[S, E]{
 		name:         b.name,
 		states:       b.states,
 		edges:        b.edges,
 		currentState: b.states[0],
 	}
-	return &sm
+	return &sm, nil
+}
+
+func (b *Builder[S, E]) addError(sentinel error, format string, args ...any) {
+	b.errors = append(b.errors, fmt.Errorf(format, args, sentinel))
 }

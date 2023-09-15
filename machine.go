@@ -7,52 +7,60 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
-type DefaultStateMachine[S State, E Event] struct {
+type defaultStateMachine[S State, E Event] struct {
 	name   string
-	states []S                // TODO: Change to [][]S when sub-states are introduced
-	edges  map[S][]edge[S, E] // adjacency map representation
+	states []S                // TODO: Change to [][]S when sub-states are introduced or have separate childToParentStates map
+	edges  map[S][]edge[S, E] // adjacency map representation,
 	// ALTERNATIVELY: use adjacency matrix ie [][]struct{} or [][]int and a []S stateIndices and []Edge[S, E] edgeIndices
 	// If there is an edge from vertex i to j, mark adjMat[i][j] as 1.
 	// If there is no edge from vertex i to j, mark adjMat[i][j] as 0.
-	currentState S
+	currentState        S
+	childToParentStates map[S]S // DISCUSS THIS: proposal-1.
 }
 
-func (m *DefaultStateMachine[S, E]) Name() string {
+func (m *defaultStateMachine[S, E]) Name() string {
 	return m.name
 }
 
-func (m *DefaultStateMachine[S, E]) CurrentState() S {
+func (m *defaultStateMachine[S, E]) CurrentState() S {
 	return m.currentState
 }
 
-func (m *DefaultStateMachine[S, E]) States() []S {
-	return m.states
-}
-
-func (m *DefaultStateMachine[S, E]) StatesSet() sets.Set[S] {
+func (m *defaultStateMachine[S, E]) States() sets.Set[S] {
 	return sets.New(m.states...)
 }
 
-func (m *DefaultStateMachine[S, E]) Trigger(triggerEvent E, message string) (transition Transition[S, E], err error) { //TODO: define custom error with error code
-	//// TODO, FIXME: Take Mutex and then call Trigger mutex
+func (m *defaultStateMachine[S, E]) Trigger(triggerEvent E, message string) (transition Transition[S, E], err error) { //TODO: define custom error with error code
+	// TODO, FIXME: Take Mutex and then call Trigger mutex
 	stateEdges := m.edges[m.currentState]
-	for _, e := range stateEdges {
-		if e.sourceState != m.currentState {
-			err = fmt.Errorf("%w: current state %q does not match source stage of e %v", ErrIllegalState, m.currentState, e)
-			return
-		}
-		if e.event == triggerEvent {
-			transition = Transition[S, E]{
-				CreatedTime: metav1.Now(),
-				SourceState: m.currentState,
-				Event:       triggerEvent,
-				TargetState: e.targetState,
-				Message:     message,
+	// TODO: When adding sub-states, I must create a slice of all state edges from the parent state also.
+	// This is easy to do with using
+	//  parentState := childToParentStates map[S]S
+	//  parentEdges := m.edges[parentState] and then check transitions on the parent state.
+	//  We repeat this in a loop until we have found a transition or parentState is nil.
+	for {
+		for _, e := range stateEdges {
+			if e.sourceState != m.currentState {
+				err = fmt.Errorf("%w: current state %q does not match source stage of event %v", ErrIllegalState, m.currentState, e)
+				return
 			}
-			m.currentState = transition.TargetState
+			if e.event == triggerEvent {
+				transition = Transition[S, E]{
+					CreatedTime: metav1.Now(),
+					SourceState: m.currentState,
+					Event:       triggerEvent,
+					TargetState: e.targetState,
+					Message:     message,
+				}
+				m.currentState = transition.TargetState
+				return
+			}
+		}
+		parentState, ok := m.childToParentStates[m.currentState]
+		if !ok {
+			err = fmt.Errorf("%w: no edge for event %q from source state %q", ErrCouldNotTransition, triggerEvent, m.currentState)
 			return
 		}
+		stateEdges = m.edges[parentState]
 	}
-	err = fmt.Errorf("no transition for Event: %s from SourceState: %s", triggerEvent, m.currentState)
-	return
 }
