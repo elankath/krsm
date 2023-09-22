@@ -38,10 +38,11 @@ func (m *defaultStateMachine[S, E]) Trigger(triggerEvent E, message string) (tra
 	//  parentState := childToParentStates map[S]S
 	//  parentEdges := m.edges[parentState] and then check transitions on the parent state.
 	//  We repeat this in a loop until we have found a transition or parentState is nil.
+	sourceState := m.CurrentState()
 	for {
 		for _, e := range stateEdges {
-			if e.sourceState != m.currentState {
-				err = fmt.Errorf("%w: current state %q does not match source stage of event %v", ErrIllegalState, m.currentState, e)
+			if e.sourceState != sourceState {
+				err = fmt.Errorf("current state %q does not match source stage of event %v: %w", m.currentState, e, ErrIllegalState)
 				return
 			}
 			if e.event == triggerEvent {
@@ -56,11 +57,12 @@ func (m *defaultStateMachine[S, E]) Trigger(triggerEvent E, message string) (tra
 				return
 			}
 		}
-		parentState, ok := m.childToParentStates[m.currentState]
+		parentState, ok := m.childToParentStates[sourceState]
 		if !ok {
-			err = fmt.Errorf("%w: no edge for event %q from source state %q", ErrCouldNotTransition, triggerEvent, m.currentState)
+			err = fmt.Errorf("no edge for event %q from source state %q: %w", triggerEvent, m.currentState, ErrCouldNotTransition)
 			return
 		}
+		sourceState = parentState
 		stateEdges = m.edges[parentState]
 	}
 }

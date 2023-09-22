@@ -4,36 +4,40 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+
+	"golang.org/x/exp/maps"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 type Builder[S State, E Event] struct {
-	name               string
-	states             []S
-	edges              map[S][]edge[S, E]
-	stateConfigurators map[S]*StateConfigurator[S, E]
-	errors             []error
-	parentStates       map[S]S
+	name                string
+	states              []S
+	edges               map[S][]edge[S, E]
+	stateConfigurators  map[S]*defaultStateConfigurator[S, E]
+	errors              []error
+	childToParentStates map[S]S
 }
 
-type StateConfigurator[S State, E Event] struct {
+type defaultStateConfigurator[S State, E Event] struct {
 	builder *Builder[S, E]
 	state   S
 }
 
 func NewBuilder[S State, E Event](name string) *Builder[S, E] {
 	return &Builder[S, E]{
-		name:               name,
-		stateConfigurators: make(map[S]*StateConfigurator[S, E]),
-		edges:              make(map[S][]edge[S, E]),
+		name:                name,
+		stateConfigurators:  make(map[S]*defaultStateConfigurator[S, E]),
+		edges:               make(map[S][]edge[S, E]),
+		childToParentStates: make(map[S]S),
 	}
 }
 
-func (b *Builder[S, E]) ConfigureState(state S) *StateConfigurator[S, E] {
+func (b *Builder[S, E]) newStateConfigurator(state S) *defaultStateConfigurator[S, E] {
 	stateConfigurator, ok := b.stateConfigurators[state]
 	if ok {
 		return stateConfigurator
 	}
-	stateConfigurator = &StateConfigurator[S, E]{
+	stateConfigurator = &defaultStateConfigurator[S, E]{
 		builder: b,
 		state:   state,
 	}
@@ -42,58 +46,112 @@ func (b *Builder[S, E]) ConfigureState(state S) *StateConfigurator[S, E] {
 	return stateConfigurator
 }
 
-func (b *Builder[S, E]) ConfigureSubState(subState S, parentState S) *StateConfigurator[S, E] {
-	subStateConfigurator := b.ConfigureState(subState)
-	parentStates := b.parentStates
+func (b *Builder[S, E]) ConfigureSubState(subState S, parentState S) StateConfigurator[S, E] {
+	subStateConfigurator := b.newStateConfigurator(subState)
+	if b.getParentStates().Has(subState) {
+		b.addError(ErrIllegalState, "sub-state %q is already defined as top level state: %w", subState)
+		return &noopStateConfigurator[S, E]{builder: b}
+	}
+	parentStates := b.childToParentStates
 	if currParent, ok := parentStates[subState]; ok {
 		if currParent != parentState {
 			b.addError(ErrCannotHaveDiffParents, "cannot have parent %q as existing parent %q is already defined: %w", parentState, currParent)
 		}
 		return subStateConfigurator
 	}
-	b.parentStates[subState] = parentState
+	b.childToParentStates[subState] = parentState
 	return subStateConfigurator
 }
 
-func (c *StateConfigurator[S, E]) ConfigureState(state S) *StateConfigurator[S, E] {
-	return c.builder.ConfigureState(state)
+func (b *Builder[S, E]) ConfigureState(state S) StateConfigurator[S, E] {
+	if _, ok := b.childToParentStates[state]; ok {
+		b.addError(ErrIllegalState, "state %q is already a sub-state: %w", state)
+		return &noopStateConfigurator[S, E]{builder: b}
+	}
+	return b.newStateConfigurator(state)
 }
 
-func (c *StateConfigurator[S, E]) ConfigureSubState(subState S, parentState S) *StateConfigurator[S, E] {
+func (c *defaultStateConfigurator[S, E]) ConfigureState(state S) StateConfigurator[S, E] {
+	return c.builder.newStateConfigurator(state)
+}
+
+func (c *defaultStateConfigurator[S, E]) ConfigureSubState(subState S, parentState S) StateConfigurator[S, E] {
 	return c.builder.ConfigureSubState(subState, parentState)
 }
 
-func (c *StateConfigurator[S, E]) Permit(event E, targetState S) *StateConfigurator[S, E] {
-	edge := edge[S, E]{
-		sourceState: c.state,
-		event:       event,
-		targetState: targetState,
+func (c *defaultStateConfigurator[S, E]) Build() (StateMachine[S, E], error) {
+	return c.builder.Build()
+}
+
+func (c *defaultStateConfigurator[S, E]) Target(targetState S, events ...E) StateConfigurator[S, E] {
+	for _, e := range events {
+		edge := edge[S, E]{
+			sourceState: c.state,
+			event:       e,
+			targetState: targetState,
+		}
+		stateEdges := c.builder.edges[c.state]
+		if slices.Contains(stateEdges, edge) {
+			c.builder.addError(ErrDuplicateEdge, "edge %q already defined: %w", edge)
+			continue
+		}
+		stateEdges = append(stateEdges, edge)
+		c.builder.edges[c.state] = stateEdges
 	}
-	stateEdges := c.builder.edges[c.state]
-	if slices.Contains(stateEdges, edge) {
-		c.builder.addError(ErrDuplicateEdge, "edge %q already defined: %w", edge)
-		return c
-	}
-	stateEdges = append(stateEdges, edge)
-	c.builder.edges[c.state] = stateEdges
 	return c
 }
 
 // Build builds the Default State Machine. Internally ensures that indices are set on the edges for optimized
 // adjacency list traversal
-func (b *Builder[S, E]) Build() (StateMachine[S, E], error) {
+func (b *Builder[S, E]) Build() (stateMachine StateMachine[S, E], err error) {
+	initialState := b.states[0]
+	b.validateInitialState(initialState)
 	if len(b.errors) != 0 {
-		return nil, errors.Join(b.errors...)
+		err = errors.Join(b.errors...)
+		return
 	}
-	sm := defaultStateMachine[S, E]{
-		name:         b.name,
-		states:       b.states,
-		edges:        b.edges,
-		currentState: b.states[0],
+	stateMachine = &defaultStateMachine[S, E]{
+		name:                b.name,
+		states:              b.states,
+		edges:               b.edges,
+		childToParentStates: b.childToParentStates,
+		currentState:        initialState,
 	}
-	return &sm, nil
+	return
+}
+
+func (b *Builder[S, E]) getParentStates() sets.Set[S] {
+	parentStates := sets.New(b.states...)
+	parentStates.Delete(maps.Keys(b.childToParentStates)...)
+	return parentStates
+}
+
+func (b *Builder[S, E]) validateInitialState(initialState S) {
+	if len(b.edges[initialState]) == 0 {
+		b.addError(ErrNoOutEdges, "no outgoing edges from %q: %w", initialState)
+	}
 }
 
 func (b *Builder[S, E]) addError(sentinel error, format string, args ...any) {
 	b.errors = append(b.errors, fmt.Errorf(format, args, sentinel))
+}
+
+type noopStateConfigurator[S State, E Event] struct {
+	builder *Builder[S, E]
+}
+
+func (n *noopStateConfigurator[S, E]) ConfigureState(_ S) StateConfigurator[S, E] {
+	return n
+}
+
+func (n *noopStateConfigurator[S, E]) ConfigureSubState(_ S, _ S) StateConfigurator[S, E] {
+	return n
+}
+
+func (n *noopStateConfigurator[S, E]) Target(_ S, _ ...E) StateConfigurator[S, E] {
+	return n
+}
+
+func (n *noopStateConfigurator[S, E]) Build() (StateMachine[S, E], error) {
+	return nil, errors.Join(n.builder.errors...)
 }

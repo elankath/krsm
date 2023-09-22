@@ -3,9 +3,13 @@ module github.com/elankath/krsm
 go 1.21
 
 require (
-	github.com/onsi/gomega v1.27.10
 	golang.org/x/exp v0.0.0-20230817173708-d852ddb80c63
 	k8s.io/apimachinery v0.28.1
+)
+
+// Test dependencies
+require (
+	github.com/onsi/gomega v1.27.10
 )
 
 require (

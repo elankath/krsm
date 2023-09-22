@@ -25,11 +25,21 @@ var (
 
 	// ErrCannotHaveDiffParents is a sentinel error indicating that a state cannot have different parents
 	ErrCannotHaveDiffParents = errors.New("state cannot have diff parent")
+
+	// ErrNoOutEdges is a sentinel error indicating that a state has no outgoing edges
+	ErrNoOutEdges = errors.New("no out edges")
 )
 
 type State interface {
 	~string
 	constraints.Ordered
+}
+
+type StateConfigurator[S State, E Event] interface {
+	ConfigureState(state S) StateConfigurator[S, E]
+	ConfigureSubState(subState S, parentState S) StateConfigurator[S, E]
+	Target(targetState S, events ...E) StateConfigurator[S, E]
+	Build() (StateMachine[S, E], error)
 }
 
 type Event interface {

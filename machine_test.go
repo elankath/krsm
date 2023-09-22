@@ -1,6 +1,8 @@
 package krsm
 
 import (
+	"errors"
+	"fmt"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -20,23 +22,22 @@ func TestSimpleCatMachine(t *testing.T) {
 		Hit CatEvent = "HIT"
 	)
 	var allStates = []CatState{Sleeping, Purring, Scratching, Biting}
+	g := NewWithT(t)
 
 	builder := NewBuilder[CatState, CatEvent]("CatMachine")
-	builder.ConfigureState(Sleeping).
-		Permit(Pet, Purring).
-		Permit(Hit, Scratching).
+	catMachine, err := builder.ConfigureState(Sleeping).
+		Target(Purring, Pet).
+		Target(Scratching, Hit).
 		ConfigureState(Purring).
-		Permit(Pet, Sleeping).
-		Permit(Hit, Biting).
+		Target(Sleeping, Pet).
+		Target(Biting, Hit).
 		ConfigureState(Scratching).
-		Permit(Pet, Purring).
-		Permit(Hit, Biting).
+		Target(Purring, Pet).
+		Target(Biting, Hit).
 		ConfigureState(Biting).
-		Permit(Pet, Scratching).
-		Permit(Hit, Biting)
+		Target(Scratching, Pet).
+		Target(Biting, Hit).Build()
 
-	catMachine, err := builder.Build()
-	g := NewWithT(t)
 	g.Expect(err).To(BeNil())
 	g.Expect(catMachine.States()).To(BeEquivalentTo(sets.New(allStates...)))
 
@@ -60,18 +61,78 @@ func TestMachineWithSubStates(t *testing.T) {
 		Biting   DogState = "Biting"
 		Wagging  DogState = "Wagging"
 		Eating   DogState = "Eating"
+		Dead     DogState = "Dead"
 
-		Pet  DogEvent = "PET"
-		Slap DogEvent = "SLAP"
-		Kick DogEvent = "KICK"
-		Feed DogEvent = "FEED"
+		Pet   DogEvent = "PET"
+		Slap  DogEvent = "SLAP"
+		Kick  DogEvent = "KICK"
+		Feed  DogEvent = "FEED"
+		Shoot DogEvent = "SHOOT"
 	)
-	var allStates = []DogState{Asleep, Dreaming, Awake, Barking, Biting, Wagging, Eating}
+	g := NewWithT(t)
+	//var allStates = []DogState{Asleep, Dreaming, Awake, Barking, Biting, Wagging, Eating}
 	builder := NewBuilder[DogState, DogEvent]("DogMachine")
-	builder.ConfigureState(Asleep).
-		Permit(Pet, Asleep).
-		Permit(Slap, Awake).
-		Permit(Kick, Barking).
-		//ConfigureSubState()
+	dogMachine, err := builder.ConfigureState(Asleep).
+		Target(Asleep, Pet).
+		Target(Awake, Slap).
+		Target(Barking, Kick).
+		ConfigureState(Awake).
+		Target(Biting, Slap).
+		Target(Biting, Kick).
+		Target(Eating, Feed).
+		ConfigureSubState(Barking, Awake).
+		Target(Biting, Slap, Kick).
+		ConfigureSubState(Biting, Awake).
+		Build()
 
+	g.Expect(err).To(BeNil())
+	g.Expect(dogMachine.CurrentState()).To(Equal(Asleep))
+	transition, err := dogMachine.Trigger(Kick, "kicking Tommy")
+	g.Expect(err).To(BeNil())
+	g.Expect(dogMachine.CurrentState()).To(Equal(Barking))
+	g.Expect(transition.SourceState).To(Equal(Asleep))
+	g.Expect(transition.TargetState).To(Equal(Barking))
+	g.Expect(transition.Event).To(Equal(Kick))
+	transition, err = dogMachine.Trigger(Kick, "double-whammy")
+	g.Expect(err).To(BeNil())
+	g.Expect(dogMachine.CurrentState()).To(Equal(Biting))
+	g.Expect(transition.SourceState).To(Equal(Barking))
+	g.Expect(transition.TargetState).To(Equal(Biting))
+	g.Expect(transition.Event).To(Equal(Kick))
+
+	transition, err = dogMachine.Trigger(Feed, "dont bite, eat")
+	g.Expect(err).To(BeNil())
+
+	_, err = dogMachine.Trigger(Pet, "eat more")
+	g.Expect(err).ToNot(BeNil())
+	g.Expect(errors.Is(err, ErrCouldNotTransition)).To(BeTrue())
+
+	//g.Expect(dogMachine.States()).To(BeEquivalentTo(sets.New(allStates...)))
+
+}
+
+func TestIllegalStateConfiguration(t *testing.T) {
+	type HorseState string
+	type HorseEvent string
+
+	const (
+		Asleep    HorseState = "Asleep"
+		Awake     HorseState = "Awake"
+		Galloping HorseState = "Galloping"
+		Trotting  HorseState = "Trotting"
+
+		Slap HorseEvent = "Slap"
+		Kick HorseEvent = "Kick"
+	)
+	g := NewWithT(t)
+
+	builder := NewBuilder[HorseState, HorseEvent]("HorseMachine")
+	_, err := builder.ConfigureState(Asleep).
+		Target(Awake, Slap).
+		ConfigureState(Awake).
+		ConfigureSubState(Awake, Asleep).
+		Build()
+	g.Expect(err).ToNot(BeNil())
+	fmt.Println(err)
+	g.Expect(errors.Is(err, ErrIllegalState)).To(BeTrue())
 }
