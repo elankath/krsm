@@ -8,9 +8,7 @@ require (
 )
 
 // Test dependencies
-require (
-	github.com/onsi/gomega v1.27.10
-)
+require github.com/onsi/gomega v1.27.10
 
 require (
 	github.com/go-logr/logr v1.2.4 // indirect

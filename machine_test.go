@@ -54,20 +54,16 @@ func TestMachineWithSubStates(t *testing.T) {
 	type DogEvent string
 
 	const (
-		Asleep   DogState = "Asleep"
-		Dreaming DogState = "Dreaming"
-		Awake    DogState = "Awake"
-		Barking  DogState = "Barking"
-		Biting   DogState = "Biting"
-		Wagging  DogState = "Wagging"
-		Eating   DogState = "Eating"
-		Dead     DogState = "Dead"
+		Asleep  DogState = "Asleep"
+		Awake   DogState = "Awake"
+		Barking DogState = "Barking"
+		Biting  DogState = "Biting"
+		Eating  DogState = "Eating"
 
-		Pet   DogEvent = "PET"
-		Slap  DogEvent = "SLAP"
-		Kick  DogEvent = "KICK"
-		Feed  DogEvent = "FEED"
-		Shoot DogEvent = "SHOOT"
+		Pet  DogEvent = "PET"
+		Slap DogEvent = "SLAP"
+		Kick DogEvent = "KICK"
+		Feed DogEvent = "FEED"
 	)
 	g := NewWithT(t)
 	//var allStates = []DogState{Asleep, Dreaming, Awake, Barking, Biting, Wagging, Eating}
@@ -116,13 +112,10 @@ func TestIllegalStateConfiguration(t *testing.T) {
 	type HorseEvent string
 
 	const (
-		Asleep    HorseState = "Asleep"
-		Awake     HorseState = "Awake"
-		Galloping HorseState = "Galloping"
-		Trotting  HorseState = "Trotting"
+		Asleep HorseState = "Asleep"
+		Awake  HorseState = "Awake"
 
 		Slap HorseEvent = "Slap"
-		Kick HorseEvent = "Kick"
 	)
 	g := NewWithT(t)
 
@@ -135,4 +128,39 @@ func TestIllegalStateConfiguration(t *testing.T) {
 	g.Expect(err).ToNot(BeNil())
 	fmt.Println(err)
 	g.Expect(errors.Is(err, ErrIllegalState)).To(BeTrue())
+}
+
+func TestMachineWithGuards(t *testing.T) {
+	type DogState string
+	type DogEvent string
+	type Dog struct {
+		name string
+		age  int
+	}
+	puppy := Dog{
+		name: "puppy",
+		age:  1,
+	}
+	granny := Dog{
+		name: "granny",
+		age:  10,
+	}
+
+	const (
+		Barking DogState = "Barking"
+		Biting  DogState = "Biting"
+		Wagging DogState = "Wagging"
+
+		Pet  DogEvent = "PET"
+		Slap DogEvent = "SLAP"
+		Kick DogEvent = "KICK"
+	)
+
+	g := NewWithT(t)
+	builder := NewBuilder[DogState, DogEvent]("DogMachine")
+	dogMachine, err := builder.ConfigureState(Barking).
+		Target(Wagging, Pet).
+		TargetWithGuard(Biting, Slap).
+		Target(Barking, Kick).
+		Build()
 }

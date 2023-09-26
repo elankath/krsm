@@ -84,21 +84,37 @@ func (c *defaultStateConfigurator[S, E]) Build() (StateMachine[S, E], error) {
 }
 
 func (c *defaultStateConfigurator[S, E]) Target(targetState S, events ...E) StateConfigurator[S, E] {
-	for _, e := range events {
-		edge := edge[S, E]{
+	for _, event := range events {
+		e := edge[S, E]{
 			sourceState: c.state,
-			event:       e,
+			event:       event,
 			targetState: targetState,
 		}
-		stateEdges := c.builder.edges[c.state]
-		if slices.Contains(stateEdges, edge) {
-			c.builder.addError(ErrDuplicateEdge, "edge %q already defined: %w", edge)
-			continue
-		}
-		stateEdges = append(stateEdges, edge)
-		c.builder.edges[c.state] = stateEdges
+		c.addEdge(e)
 	}
 	return c
+}
+
+func (c *defaultStateConfigurator[S, E]) TargetWithGuard(targetState S, event E, guardLabel string, guardPredicate GuardPredicate) StateConfigurator[S, E] {
+	e := edge[S, E]{
+		sourceState: c.state,
+		event:       event,
+		targetState: targetState,
+		guardLabel:  guardLabel,
+		guard:       guardPredicate,
+	}
+	c.addEdge(e)
+	return c
+}
+
+func (c *defaultStateConfigurator[S, E]) addEdge(e edge[S, E]) {
+	stateEdges := c.builder.edges[c.state]
+	if slices.Contains(stateEdges, e) {
+		c.builder.addError(ErrDuplicateEdge, "edge %q already defined: %w", e)
+		return
+	}
+	stateEdges = append(stateEdges, e)
+	c.builder.edges[c.state] = stateEdges
 }
 
 // Build builds the Default State Machine. Internally ensures that indices are set on the edges for optimized
@@ -138,6 +154,10 @@ func (b *Builder[S, E]) addError(sentinel error, format string, args ...any) {
 
 type noopStateConfigurator[S State, E Event] struct {
 	builder *Builder[S, E]
+}
+
+func (n *noopStateConfigurator[S, E]) TargetWithGuard(_ S, _ E, _ string, _ GuardPredicate) StateConfigurator[S, E] {
+	return n
 }
 
 func (n *noopStateConfigurator[S, E]) ConfigureState(_ S) StateConfigurator[S, E] {

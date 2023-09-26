@@ -46,6 +46,9 @@ func (m *defaultStateMachine[S, E]) Trigger(triggerEvent E, message string) (tra
 				return
 			}
 			if e.event == triggerEvent {
+				if e.guard != nil && !e.guard() {
+					continue
+				}
 				transition = Transition[S, E]{
 					CreatedTime: metav1.Now(),
 					SourceState: m.currentState,
