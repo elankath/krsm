@@ -35,7 +35,7 @@ type StateConfigurator[S State, E Event] interface {
 	ConfigureState(state S) StateConfigurator[S, E]
 	ConfigureSubState(subState S, parentState S) StateConfigurator[S, E]
 	Target(targetState S, events ...E) StateConfigurator[S, E]
-	TargetWithGuard(targetState S, event E, guardLabel string, guardPredicate GuardPredicate) StateConfigurator[S, E]
+	TargetWithGuard(targetState S, event E, guardLabel string, guardPredicate Guard[S, E]) StateConfigurator[S, E]
 	Build() (StateMachine[S, E], error)
 }
 
@@ -47,7 +47,11 @@ type Event interface {
 type Resource[S State, E Event] interface {
 	GetNamespace() string
 	GetName() string
+	// CurrentState returns the current state of the resource. It should be set at initialization to the initial state.
+	// It is the resource implementor's  responsibility to ensure this is concurrent safe.
 	CurrentState() S
+	// SetTransition records the given transition and also changes the current state of the resource.
+	// It is the resource implementor's  responsibility to ensure this is concurrent safe.
 	SetTransition(transition Transition[S, E])
 }
 
@@ -61,12 +65,11 @@ type Transition[S State, E Event] struct {
 	Message           string
 }
 
-type GuardPredicate func(resource Resource) bool // TODO: define this carefully later
+type Guard[S State, E Event] func(resource Resource[S, E]) bool
 
 type StateMachine[S State, E Event] interface {
 	Name() string
-	CurrentState() S
-	Trigger(event E, resource Resource, message string) (transition Transition[S, E], err error)
+	Trigger(event E, resource Resource[S, E], message string) (transition Transition[S, E], err error)
 	States() sets.Set[S]
 }
 
@@ -75,7 +78,7 @@ type edge[S State, E Event] struct {
 	sourceState S
 	targetState S
 	guardLabel  string
-	guard       GuardPredicate
+	guard       Guard[S, E]
 }
 
 func (e *edge[S, E]) String() string {

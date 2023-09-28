@@ -95,13 +95,13 @@ func (c *defaultStateConfigurator[S, E]) Target(targetState S, events ...E) Stat
 	return c
 }
 
-func (c *defaultStateConfigurator[S, E]) TargetWithGuard(targetState S, event E, guardLabel string, guardPredicate GuardPredicate) StateConfigurator[S, E] {
+func (c *defaultStateConfigurator[S, E]) TargetWithGuard(targetState S, event E, guardLabel string, guard Guard[S, E]) StateConfigurator[S, E] {
 	e := edge[S, E]{
 		sourceState: c.state,
 		event:       event,
 		targetState: targetState,
 		guardLabel:  guardLabel,
-		guard:       guardPredicate,
+		guard:       guard,
 	}
 	c.addEdge(e)
 	return c
@@ -109,7 +109,12 @@ func (c *defaultStateConfigurator[S, E]) TargetWithGuard(targetState S, event E,
 
 func (c *defaultStateConfigurator[S, E]) addEdge(e edge[S, E]) {
 	stateEdges := c.builder.edges[c.state]
-	if slices.Contains(stateEdges, e) {
+	if slices.ContainsFunc(stateEdges, func(k edge[S, E]) bool {
+		if k.event == e.event && k.sourceState == e.sourceState && k.targetState == e.targetState {
+			return true
+		}
+		return false
+	}) {
 		c.builder.addError(ErrDuplicateEdge, "edge %q already defined: %w", e)
 		return
 	}
@@ -131,7 +136,6 @@ func (b *Builder[S, E]) Build() (stateMachine StateMachine[S, E], err error) {
 		states:              b.states,
 		edges:               b.edges,
 		childToParentStates: b.childToParentStates,
-		currentState:        initialState,
 	}
 	return
 }
@@ -156,7 +160,7 @@ type noopStateConfigurator[S State, E Event] struct {
 	builder *Builder[S, E]
 }
 
-func (n *noopStateConfigurator[S, E]) TargetWithGuard(_ S, _ E, _ string, _ GuardPredicate) StateConfigurator[S, E] {
+func (n *noopStateConfigurator[S, E]) TargetWithGuard(_ S, _ E, _ string, _ Guard[S, E]) StateConfigurator[S, E] {
 	return n
 }
 
