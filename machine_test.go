@@ -2,7 +2,6 @@ package krsm
 
 import (
 	"errors"
-	"fmt"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -57,7 +56,7 @@ func TestMachineWithSubStates(t *testing.T) {
 		ConfigureSubState(DogStates.Biting, DogStates.Awake).
 		Build()
 
-	myDog := Dog[DogState, DogEvent]{name: "tommy", namespace: "pet", currentState: DogStates.Asleep}
+	myDog := &Dog[DogState, DogEvent]{name: "tommy", namespace: "pet", currentState: DogStates.Asleep}
 	g.Expect(err).To(BeNil())
 	g.Expect(myDog.CurrentState()).To(Equal(DogStates.Asleep))
 
@@ -106,7 +105,6 @@ func TestIllegalStateConfiguration(t *testing.T) {
 		ConfigureSubState(Awake, Asleep).
 		Build()
 	g.Expect(err).ToNot(BeNil())
-	fmt.Println(err)
 	g.Expect(errors.Is(err, ErrIllegalState)).To(BeTrue())
 }
 
@@ -227,19 +225,19 @@ type Dog[S DogState, E DogEvent] struct {
 	lastTransition Transition[S, E]
 }
 
-func (c Dog[S, E]) GetNamespace() string {
+func (c *Dog[S, E]) GetNamespace() string {
 	return c.namespace
 }
 
-func (c Dog[S, E]) GetName() string {
+func (c *Dog[S, E]) GetName() string {
 	return c.name
 }
 
-func (c Dog[S, E]) CurrentState() S {
+func (c *Dog[S, E]) CurrentState() S {
 	return c.currentState
 }
 
-func (c Dog[S, E]) SetTransition(transition Transition[S, E]) {
+func (c *Dog[S, E]) SetTransition(transition Transition[S, E]) {
 	c.lastTransition = transition
 	c.currentState = transition.TargetState
 }

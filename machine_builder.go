@@ -47,11 +47,11 @@ func (b *Builder[S, E]) newStateConfigurator(state S) *defaultStateConfigurator[
 }
 
 func (b *Builder[S, E]) ConfigureSubState(subState S, parentState S) StateConfigurator[S, E] {
-	subStateConfigurator := b.newStateConfigurator(subState)
 	if b.getParentStates().Has(subState) {
 		b.addError(ErrIllegalState, "sub-state %q is already defined as top level state: %w", subState)
 		return &noopStateConfigurator[S, E]{builder: b}
 	}
+	subStateConfigurator := b.newStateConfigurator(subState)
 	parentStates := b.childToParentStates
 	if currParent, ok := parentStates[subState]; ok {
 		if currParent != parentState {
