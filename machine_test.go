@@ -108,40 +108,43 @@ func TestIllegalStateConfiguration(t *testing.T) {
 	g.Expect(errors.Is(err, ErrIllegalState)).To(BeTrue())
 }
 
-//func TestMachineWithGuards(t *testing.T) {
-//	type DogState string
-//	type DogEvent string
-//	type Dog struct {
-//		name string
-//		age  int
-//	}
-//	puppy := Dog{
-//		name: "puppy",
-//		age:  1,
-//	}
-//	granny := Dog{
-//		name: "granny",
-//		age:  10,
-//	}
-//
-//	const (
-//		Barking DogState = "Barking"
-//		Biting  DogState = "Biting"
-//		Wagging DogState = "Wagging"
-//
-//		Pet  DogEvent = "PET"
-//		Slap DogEvent = "SLAP"
-//		Kick DogEvent = "KICK"
-//	)
-//
-//	g := NewWithT(t)
-//	builder := NewBuilder[DogState, DogEvent]("DogMachine")
-//	dogMachine, err := builder.ConfigureState(Barking).
-//		Target(Wagging, Pet).
-//		TargetWithGuard(Biting, Slap).
-//		Target(Barking, Kick).
-//		Build()
-//}
+func TestMachineWithGuards(t *testing.T) {
+	puppy := &Dog[DogState, DogEvent]{
+		name:         "puppy",
+		namespace:    "pet",
+		age:          1,
+		currentState: DogStates.Barking,
+	}
+	//granny := &Dog[DogState, DogEvent]{
+	//	name:         "granny",
+	//	namespace:    "pet",
+	//	age:          10,
+	//	currentState: DogStates.Barking,
+	//}
+
+	g := NewWithT(t)
+	builder := NewBuilder[DogState, DogEvent]("DogMachine")
+	youngDog := func(resource Resource[DogState, DogEvent]) bool {
+		dog := resource.(*Dog[DogState, DogEvent])
+		if dog.age < 10 {
+			return true
+		}
+		return false
+	}
+	dogMachine, err := builder.ConfigureState(DogStates.Barking).
+		Target(DogStates.Wagging, DogEvents.Pet).
+		TargetWithGuard(DogStates.Biting, DogEvents.Slap, "isYoungDog", youngDog).
+		TargetWithGuard(DogStates.Barking, DogEvents.Slap, "isOldDog", InvertGuard(youngDog)).
+		Target(DogStates.Barking, DogEvents.Kick).
+		Build()
+
+	transition, err := dogMachine.Trigger(DogEvents.Slap, puppy, "Slap Puppy")
+	g.Expect(err).To(BeNil())
+	g.Expect(transition.TargetState).To(Equal(DogStates.Biting))
+	g.Expect(puppy.CurrentState()).To(Equal(DogStates.Biting))
+
+	//introduce sub-test later for granny
+}
 
 type CatState string
 type CatEvent string
@@ -199,12 +202,14 @@ var DogStates = struct {
 	Barking DogState
 	Biting  DogState
 	Eating  DogState
+	Wagging DogState
 }{
 	Asleep:  "Asleep",
 	Awake:   "Awake",
 	Barking: "Barking",
 	Biting:  "Biting",
 	Eating:  "Eating",
+	Wagging: "Wagging",
 }
 var DogEvents = struct {
 	Pet  DogEvent
@@ -221,6 +226,7 @@ var DogEvents = struct {
 type Dog[S DogState, E DogEvent] struct {
 	name           string
 	namespace      string
+	age            int
 	currentState   S
 	lastTransition Transition[S, E]
 }

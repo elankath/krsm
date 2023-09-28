@@ -84,3 +84,9 @@ type edge[S State, E Event] struct {
 func (e *edge[S, E]) String() string {
 	return fmt.Sprintf("(%s-%s-%s)", e.sourceState, e.event, e.targetState)
 }
+
+func InvertGuard[S State, E Event](guard Guard[S, E]) Guard[S, E] {
+	return func(resource Resource[S, E]) bool {
+		return !guard(resource)
+	}
+}
